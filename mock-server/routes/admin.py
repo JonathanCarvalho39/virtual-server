@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import zipfile
+import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 
 from services import scanner, loader
@@ -340,5 +343,152 @@ async def delete_item(payload: dict):
             path.unlink()
         _reload_cache()
         return {"status": "deleted", "path": path_str}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+
+
+@router.post("/upload")
+async def upload_folder(
+    file: UploadFile = File(...),
+    target: str = Form(""),
+):
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        return JSONResponse(
+            status_code=413,
+            content={"error": f"Arquivo muito grande. Tamanho máximo: {MAX_UPLOAD_SIZE // (1024*1024)}MB"}
+        )
+
+    target_dir = API_DIR
+    if target:
+        rel = target.lstrip("/")
+        if rel.startswith("api/"):
+            rel = rel[4:]
+        if rel:
+            target_dir = API_DIR / rel
+
+    if not _is_within_api(target_dir):
+        return JSONResponse(status_code=403, content={"error": "Fora do diretório api/"})
+
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        if file.filename.endswith(".zip"):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                zip_path = Path(tmp_dir) / file.filename
+                zip_path.write_bytes(content)
+
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    zf.extractall(tmp_dir)
+
+                extracted = Path(tmp_dir)
+                items = list(extracted.iterdir())
+                if len(items) == 1 and items[0].is_dir():
+                    src = items[0]
+                else:
+                    src = extracted
+
+                for item in src.iterdir():
+                    dest = target_dir / item.name
+                    if dest.exists():
+                        if dest.is_dir():
+                            shutil.rmtree(dest)
+                        else:
+                            dest.unlink()
+                    if item.is_dir():
+                        shutil.copytree(item, dest)
+                    else:
+                        shutil.copy2(item, dest)
+        else:
+            dest = target_dir / file.filename
+            if dest.exists():
+                dest.unlink()
+            dest.write_bytes(content)
+
+        _reload_cache()
+
+        routes = scanner.get_all_routes()
+        total_routes = len(routes)
+        total_scenarios = sum(
+            len(loader.load_all(sd)) for _, _, sd in routes
+        )
+
+        return {
+            "status": "uploaded",
+            "target": str(target_dir),
+            "filename": file.filename,
+            "routes": total_routes,
+            "scenarios": total_scenarios,
+        }
+    except zipfile.BadZipFile:
+        return JSONResponse(status_code=400, content={"error": "Arquivo ZIP inválido"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.post("/upload-batch")
+async def upload_batch(
+    files: list[UploadFile] = File(...),
+    target: str = Form(""),
+):
+    target_dir = API_DIR
+    if target:
+        rel = target.lstrip("/")
+        if rel.startswith("api/"):
+            rel = rel[4:]
+        if rel:
+            target_dir = API_DIR / rel
+
+    if not _is_within_api(target_dir):
+        return JSONResponse(status_code=403, content={"error": "Fora do diretório api/"})
+
+    try:
+        total_size = 0
+        for f in files:
+            content = await f.read()
+            total_size += len(content)
+            if total_size > MAX_UPLOAD_SIZE:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": f"Arquivos muito grandes. Tamanho máximo: {MAX_UPLOAD_SIZE // (1024*1024)}MB"}
+                )
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        for f in files:
+            content = await f.read()
+            rel_path = f.filename
+            if rel_path.startswith("/"):
+                rel_path = rel_path[1:]
+
+            dest = target_dir / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            if dest.exists():
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+
+            dest.write_bytes(content)
+
+        _reload_cache()
+
+        routes = scanner.get_all_routes()
+        total_routes = len(routes)
+        total_scenarios = sum(
+            len(loader.load_all(sd)) for _, _, sd in routes
+        )
+
+        return {
+            "status": "uploaded",
+            "target": str(target_dir),
+            "files": len(files),
+            "routes": total_routes,
+            "scenarios": total_scenarios,
+        }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

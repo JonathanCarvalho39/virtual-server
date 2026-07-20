@@ -44,6 +44,9 @@
                         <button id="btn-add-file" class="btn-icon" title="Novo cenário">
                             <i class="fas fa-file-circle-plus"></i>
                         </button>
+                        <button id="btn-import" class="btn-icon" title="Importar pasta ZIP">
+                            <i class="fas fa-file-zipper"></i>
+                        </button>
                     </div>
                 </div>
                 <div id="folder-tree" class="panel-content tree-view">
@@ -142,6 +145,37 @@
         <button id="ctx-rename" class="ctx-item"><i class="fas fa-pen"></i> Renomear</button>
         <button id="ctx-delete" class="ctx-item ctx-danger"><i class="fas fa-trash"></i> Deletar</button>
         <button id="ctx-curl" class="ctx-item ctx-curl"><i class="fas fa-terminal"></i> Copiar curl</button>
+    </div>
+
+    <div id="upload-overlay" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Importar Pasta</h3>
+                <button id="upload-close" class="btn-icon"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <label for="upload-target">Importar para:</label>
+                <input type="text" id="upload-target" class="modal-input" placeholder="api/ (raiz)" value="">
+                <p class="modal-hint">Deixe vazio para importar na raiz da api/</p>
+                <div id="upload-dropzone" class="upload-dropzone">
+                    <i class="fas fa-cloud-arrow-up"></i>
+                    <p>Arraste <strong>.zip</strong> ou <strong>pasta</strong> aqui</p>
+                    <p class="modal-hint">ou clique para selecionar</p>
+                    <input type="file" id="upload-file" hidden>
+                    <input type="file" id="upload-folder" webkitdirectory hidden>
+                </div>
+                <div id="upload-progress" class="hidden">
+                    <div class="upload-bar">
+                        <div id="upload-bar-fill" class="upload-bar-fill"></div>
+                    </div>
+                    <p id="upload-status" class="modal-hint"></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="upload-cancel" class="btn btn-secondary">Cancelar</button>
+                <button id="upload-confirm" class="btn btn-success" disabled>Importar</button>
+            </div>
+        </div>
     </div>
 
     <div id="toast" class="toast hidden"></div>

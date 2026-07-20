@@ -25,9 +25,12 @@ api/
 
 ## Estrutura do Arquivo JSON
 
+O servidor aceita **dois formatos** de JSON:
+
+### Formato Padrão
+
 ```json
 {
-  "name": "Nome do cenário",
   "request": {
     "headers": {},
     "query": {},
@@ -43,16 +46,27 @@ api/
 }
 ```
 
-### Campos
+### Formato Virtualização (compatível com ferramentas externas)
 
-| Campo | Obrigatório | Descrição |
-|-------|-------------|-----------|
-| `name` | Não | Nome descritivo do cenário |
-| `request` | Não | Regras de matching da requisição |
-| `response` | Sim | Resposta retornada pelo mock |
-| `response.status` | Não | Código HTTP (padrão: 200) |
-| `response.headers` | Não | Headers da resposta |
-| `response.body` | Não | Corpo da resposta |
+```json
+{
+  "request": {
+    "header": {},
+    "query_string": {},
+    "parameters": {},
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "header": {
+      "Content-Type": "application/json"
+    },
+    "body": {}
+  }
+}
+```
+
+> **Nota:** `header` é mapeado para `headers`, `query_string` para `query`. O campo `parameters` é ignorado.
 
 ---
 
@@ -68,7 +82,9 @@ api/
 
 ## Tokens de Request
 
-Usados no `request.headers`, `request.query` e `request.body` para definir regras de matching.
+Usados no `request.headers` (ou `header`) e `request.body` para definir regras de matching.
+
+### Formato Padrão
 
 | Token | Descrição |
 |-------|-----------|
@@ -85,6 +101,16 @@ Usados no `request.headers`, `request.query` e `request.body` para definir regra
 | `/date/` | Valor no formato ISO date |
 | `^regex$` | Expressão regular (ex: `^[0-9]{11}$`) |
 | `valor_literal` | Comparação exata (ex: `"12345678901"`) |
+
+### Formato Virtualização (Wildcards)
+
+| Padrão | Descrição |
+|--------|-----------|
+| `$$.*$$` | Qualquer valor (wildcard) |
+| `$$.*json.*$$` | Qualquer valor contendo "json" |
+| `$$^\\d{1,11}$$` | Regex: 1 a 11 dígitos |
+| `$$^true\|false$$` | Regex: true ou false |
+| `valor_literal` | Comparação exata |
 
 ---
 
@@ -114,7 +140,8 @@ Quando múltiplos cenários existem para a mesma rota/método, o sistema escolhe
 |------|--------|---------|
 | Literal | 3 | `"12345678901"` |
 | Regex | 2 | `^[0-9]{11}$` |
-| Token | 1 | `/any/` |
+| Token/Wildcard | 1 | `/any/` ou `$$.*$$` |
+| Objeto aninhado | +1 por campo | `{"ddi": "/any/"}` |
 
 **Exemplo:**
 - `cpf: "12345678901"` → 3 pontos (mais específico)
@@ -125,12 +152,42 @@ O cenário com mais pontos é testado primeiro.
 
 ---
 
+## Headers HTTP-Level
+
+O servidor **ignora** os seguintes headers no matching (tratados em nível HTTP):
+- `content-length`
+- `host`
+- `connection`
+- `transfer-encoding`
+
+---
+
+## Importação de Pastas
+
+É possível importar pastas completas via interface:
+
+1. Clique no ícone de **ZIP** na barra lateral
+2. Arraste um arquivo `.zip` ou clique para selecionar
+3. Defina o destino (deixe vazio para a raiz da `api/`)
+4. Clique em **Importar**
+
+A pasta será extraída e todos os cenários serão carregados automaticamente.
+
+---
+
 ## Exemplo Completo
+
+### Formato Padrão
 
 ```json
 {
-  "name": "Criar usuário - sucesso",
   "request": {
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "query": {
+      "id": "success"
+    },
     "body": {
       "nome": "/any/",
       "email": "/any/",
@@ -147,6 +204,38 @@ O cenário com mais pontos é testado primeiro.
       "nome": "{{request.body.nome}}",
       "email": "{{request.body.email}}",
       "criadoEm": "/now/"
+    }
+  }
+}
+```
+
+### Formato Virtualização
+
+```json
+{
+  "request": {
+    "header": {
+      "Content-Type": "$$.*$$",
+      "X-Pf-Authn-Api-State": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0_1"
+    },
+    "query_string": {
+      "id": "success"
+    },
+    "parameters": {},
+    "body": {
+      "identifier": "$$.*$$",
+      "bureau": "$$.*$$",
+      "ticketSDC": "$$.*$$"
+    }
+  },
+  "response": {
+    "status": 202,
+    "header": {
+      "Content-Type": "application/json; charset=UTF-8"
+    },
+    "body": {
+      "status": "SDC_IN_ANALYSIS",
+      "_pf_authn_api_state": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0_2"
     }
   }
 }

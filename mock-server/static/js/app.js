@@ -542,18 +542,42 @@ function initMonaco() {
     require(['vs/editor/editor.main'], () => {
         editor = monaco.editor.create(document.getElementById('monaco-editor'), {
             value: `{
-  "name": "Novo cenário",
   "request": {
-    "headers": {},
-    "query": {},
-    "body": {}
+    "header": {
+      "Content-Type": "application/json",
+      "Authorization": "$$.*$$",
+      "X-Request-Id": "$$^\\d{8,12}$$"
+    },
+    "query_string": {
+      "id": "default",
+      "page": "$$.*$$"
+    },
+    "body": {
+      "identifier": "$$.*$$",
+      "type": "$$^(physical|legal)$",
+      "document": {
+        "number": "$$^\\d{11}$$"
+      }
+    }
   },
   "response": {
     "status": 200,
-    "headers": {
+    "header": {
       "Content-Type": "application/json"
     },
-    "body": {}
+    "body": {
+      "id": "/uuid/",
+      "created_at": "/now/",
+      "timestamp": "/timestamp/",
+      "random_int": "/random/int/1/1000/",
+      "random_str": "/random/string/8/",
+      "random_bool": "/random/boolean/",
+      "echo_identifier": "{{request.body.identifier}}",
+      "echo_id": "{{request.query.id}}",
+      "echo_auth": "{{request.header.Authorization}}",
+      "status": "success",
+      "message": "Operação realizada com sucesso"
+    }
   }
 }`,
             language: 'json',
@@ -1037,5 +1061,229 @@ async function pollLogs() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', init);
 setInterval(pollLogs, 1000);
+
+function setupUpload() {
+    const btnImport = document.getElementById('btn-import');
+    const overlay = document.getElementById('upload-overlay');
+    const closeBtn = document.getElementById('upload-close');
+    const cancelBtn = document.getElementById('upload-cancel');
+    const confirmBtn = document.getElementById('upload-confirm');
+    const dropzone = document.getElementById('upload-dropzone');
+    const fileInput = document.getElementById('upload-file');
+    const folderInput = document.getElementById('upload-folder');
+    const progress = document.getElementById('upload-progress');
+    const barFill = document.getElementById('upload-bar-fill');
+    const statusEl = document.getElementById('upload-status');
+
+    let selectedFiles = [];
+    let isFolder = false;
+
+    btnImport.addEventListener('click', () => {
+        selectedFiles = [];
+        isFolder = false;
+        fileInput.value = '';
+        folderInput.value = '';
+        document.getElementById('upload-target').value = '';
+        progress.classList.add('hidden');
+        barFill.style.width = '0%';
+        confirmBtn.disabled = true;
+        dropzone.querySelector('p').textContent = 'Arraste .zip ou pasta aqui';
+        overlay.classList.remove('hidden');
+    });
+
+    closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+    cancelBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.classList.add('hidden');
+    });
+
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('dragover');
+    });
+
+    dropzone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+
+        const items = e.dataTransfer.items;
+        if (items) {
+            const entries = [];
+            for (const item of items) {
+                const entry = item.webkitGetAsEntry?.();
+                if (entry) entries.push(entry);
+            }
+            if (entries.length > 0) {
+                selectedFiles = [];
+                isFolder = true;
+                await readEntries(entries, '');
+                const name = entries[0].name || `${selectedFiles.length} arquivos`;
+                dropzone.querySelector('p').innerHTML = `<strong>${name}</strong> (${selectedFiles.length} arquivos)`;
+                confirmBtn.disabled = false;
+                return;
+            }
+        }
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            if (files.length === 1) {
+                selectedFiles = [files[0]];
+                isFolder = false;
+                dropzone.querySelector('p').innerHTML = `<strong>${files[0].name}</strong>`;
+            } else {
+                selectedFiles = Array.from(files);
+                isFolder = true;
+                dropzone.querySelector('p').innerHTML = `<strong>${files.length} arquivos</strong>`;
+            }
+            confirmBtn.disabled = false;
+        }
+    });
+
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+            selectedFiles = Array.from(fileInput.files);
+            isFolder = false;
+            dropzone.querySelector('p').innerHTML = `<strong>${fileInput.files[0].name}</strong>`;
+            confirmBtn.disabled = false;
+        }
+    });
+
+    folderInput.addEventListener('change', () => {
+        if (folderInput.files.length > 0) {
+            selectedFiles = Array.from(folderInput.files);
+            isFolder = true;
+            const folderName = folderInput.files[0].webkitRelativePath.split('/')[0];
+            dropzone.querySelector('p').innerHTML = `<strong>${folderName}</strong> (${folderInput.files.length} arquivos)`;
+            confirmBtn.disabled = false;
+        }
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+        if (selectedFiles.length === 0) return;
+
+        const target = document.getElementById('upload-target').value.trim();
+        confirmBtn.disabled = true;
+        progress.classList.remove('hidden');
+        statusEl.textContent = 'Enviando...';
+        barFill.style.width = '20%';
+
+        try {
+            if (selectedFiles.length === 1 && !isFolder) {
+                const formData = new FormData();
+                formData.append('file', selectedFiles[0]);
+                formData.append('target', target);
+
+                barFill.style.width = '50%';
+                statusEl.textContent = 'Enviando arquivo...';
+
+                const res = await fetch('/admin/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await res.json();
+
+                barFill.style.width = '100%';
+
+                if (res.ok) {
+                    statusEl.textContent = `${data.routes} rotas, ${data.scenarios} cenários carregados`;
+                    log('success', `Arquivo importado: ${data.routes} rotas, ${data.scenarios} cenários`);
+                    await loadRoutes();
+                    setTimeout(() => overlay.classList.add('hidden'), 1500);
+                } else {
+                    statusEl.textContent = `Erro: ${data.error}`;
+                    log('error', `Erro ao importar: ${data.error}`);
+                    confirmBtn.disabled = false;
+                }
+            } else {
+                const formData = new FormData();
+                for (const file of selectedFiles) {
+                    const path = file.webkitRelativePath || file.name;
+                    formData.append('files', file, path);
+                }
+                formData.append('target', target);
+                formData.append('is_folder', 'true');
+
+                barFill.style.width = '50%';
+                statusEl.textContent = `Enviando ${selectedFiles.length} arquivos...`;
+
+                const res = await fetch('/admin/upload-batch', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await res.json();
+
+                barFill.style.width = '100%';
+
+                if (res.ok) {
+                    statusEl.textContent = `${data.routes} rotas, ${data.scenarios} cenários carregados`;
+                    log('success', `Pasta importada: ${data.routes} rotas, ${data.scenarios} cenários`);
+                    await loadRoutes();
+                    setTimeout(() => overlay.classList.add('hidden'), 1500);
+                } else {
+                    statusEl.textContent = `Erro: ${data.error}`;
+                    log('error', `Erro ao importar: ${data.error}`);
+                    confirmBtn.disabled = false;
+                }
+            }
+        } catch (err) {
+            statusEl.textContent = `Erro: ${err.message}`;
+            log('error', `Erro ao importar: ${err.message}`);
+            confirmBtn.disabled = false;
+        }
+    });
+
+    async function readEntries(entries, basePath) {
+        for (const entry of entries) {
+            if (entry.isFile) {
+                const file = await getFile(entry, basePath);
+                selectedFiles.push(file);
+            } else if (entry.isDirectory) {
+                const dirReader = entry.createReader();
+                const subEntries = await readDir(dirReader);
+                await readEntries(subEntries, basePath + entry.name + '/');
+            }
+        }
+    }
+
+    function getFile(entry, basePath) {
+        return new Promise((resolve) => {
+            entry.file((file) => {
+                const parts = [basePath, file.name];
+                Object.defineProperty(file, 'webkitRelativePath', {
+                    value: parts.join(''),
+                    writable: false,
+                });
+                resolve(file);
+            });
+        });
+    }
+
+    function readDir(dirReader) {
+        return new Promise((resolve) => {
+            const all = [];
+            const readBatch = () => {
+                dirReader.readEntries((entries) => {
+                    if (entries.length === 0) {
+                        resolve(all);
+                    } else {
+                        all.push(...entries);
+                        readBatch();
+                    }
+                });
+            };
+            readBatch();
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+    setupUpload();
+});
