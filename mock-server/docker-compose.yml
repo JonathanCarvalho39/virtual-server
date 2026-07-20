@@ -1,0 +1,8 @@
+services:
+  mock-server:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app/api
+    restart: unless-stopped

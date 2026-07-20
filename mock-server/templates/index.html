@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock Server</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <i class="fas fa-server"></i>
+            <h1>Mock Server</h1>
+        </div>
+        <div class="header-actions">
+            <button id="btn-start" class="btn btn-success">
+                <i class="fas fa-play"></i> Iniciar
+            </button>
+            <button id="btn-stop" class="btn btn-danger" disabled>
+                <i class="fas fa-stop"></i> Parar
+            </button>
+            <span id="server-status" class="status-badge status-stopped">
+                <i class="fas fa-circle"></i> Parado
+            </span>
+        </div>
+    </header>
+
+    <main class="main">
+        <aside class="sidebar" id="sidebar">
+            <div class="panel panel-tree" id="panel-tree">
+                <div class="panel-header">
+                    <button class="btn-icon btn-collapse" onclick="togglePanel('tree')" title="Expandir/Recolher">
+                        <i class="fas fa-chevron-down" id="icon-tree"></i>
+                    </button>
+                    <i class="fas fa-folder-tree"></i> Estrutura
+                    <div class="panel-actions">
+                        <button id="btn-add-folder" class="btn-icon" title="Nova pasta">
+                            <i class="fas fa-folder-plus"></i>
+                        </button>
+                        <button id="btn-add-method" class="btn-icon" title="Novo método">
+                            <i class="fas fa-folder-plus"></i>+
+                        </button>
+                        <button id="btn-add-file" class="btn-icon" title="Novo cenário">
+                            <i class="fas fa-file-circle-plus"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="folder-tree" class="panel-content tree-view">
+                    <p class="empty-state">Nenhum projeto carregado</p>
+                </div>
+            </div>
+
+            <div class="resize-handle resize-v" id="resize-routes" data-target="routes-height"></div>
+
+            <div class="panel panel-routes" id="panel-routes">
+                <div class="panel-header">
+                    <button class="btn-icon btn-collapse" onclick="togglePanel('routes')" title="Expandir/Recolher">
+                        <i class="fas fa-chevron-down" id="icon-routes"></i>
+                    </button>
+                    <i class="fas fa-route"></i> Rotas Disponíveis
+                </div>
+                <div id="route-list" class="panel-content route-list">
+                    <p class="empty-state">Nenhuma rota encontrada</p>
+                </div>
+            </div>
+        </aside>
+
+        <div class="resize-handle resize-h" id="resize-sidebar" data-target="sidebar-width"></div>
+
+        <section class="editor-area">
+            <div class="editor-tabs">
+                <div id="editor-tab" class="tab active" onclick="switchTab('editor')">
+                    <i class="fas fa-code"></i> Editor
+                </div>
+                <div id="reference-tab" class="tab" onclick="switchTab('reference')">
+                    <i class="fas fa-book"></i> Referência
+                </div>
+                <span id="save-status" class="save-status"></span>
+                <button id="btn-save" class="btn btn-primary btn-sm" disabled>
+                    <i class="fas fa-save"></i> Salvar
+                </button>
+            </div>
+            <div id="editor-container">
+                <div id="editor-loading" class="editor-loading hidden">
+                    <i class="fas fa-spinner fa-spin"></i> Salvando...
+                </div>
+                <div id="monaco-editor"></div>
+            </div>
+            <div id="reference-container" class="hidden">
+                <div id="reference-content" class="reference-content"></div>
+            </div>
+        </section>
+    </main>
+
+    <div class="resize-handle resize-v" id="resize-logs" data-target="logs-height"></div>
+
+    <footer class="log-panel" id="log-panel">
+        <div class="panel-header">
+            <button class="btn-icon btn-collapse" onclick="togglePanel('logs')" title="Expandir/Recolher">
+                <i class="fas fa-chevron-down" id="icon-logs"></i>
+            </button>
+            <i class="fas fa-terminal"></i> Logs
+            <button id="btn-clear-logs" class="btn-icon" title="Limpar logs">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+        <div id="log-content" class="log-content"></div>
+    </footer>
+
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Título</h3>
+                <button id="modal-close" class="btn-icon"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <label id="modal-label" for="modal-input">Nome:</label>
+                <input type="text" id="modal-input" class="modal-input" placeholder="">
+                <div id="modal-select-group" class="hidden">
+                    <label for="modal-select">Método:</label>
+                    <select id="modal-select" class="modal-select">
+                        <option value="get">GET</option>
+                        <option value="post">POST</option>
+                        <option value="put">PUT</option>
+                        <option value="patch">PATCH</option>
+                        <option value="delete">DELETE</option>
+                        <option value="head">HEAD</option>
+                        <option value="options">OPTIONS</option>
+                    </select>
+                </div>
+                <p id="modal-hint" class="modal-hint"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="modal-cancel" class="btn btn-secondary">Cancelar</button>
+                <button id="modal-confirm" class="btn btn-success">Criar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="context-menu" class="context-menu hidden">
+        <button id="ctx-rename" class="ctx-item"><i class="fas fa-pen"></i> Renomear</button>
+        <button id="ctx-delete" class="ctx-item ctx-danger"><i class="fas fa-trash"></i> Deletar</button>
+        <button id="ctx-curl" class="ctx-item ctx-curl"><i class="fas fa-terminal"></i> Copiar curl</button>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
