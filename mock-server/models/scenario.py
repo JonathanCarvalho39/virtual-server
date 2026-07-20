@@ -4,7 +4,7 @@ import re
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class RequestToken(str, Enum):
@@ -33,18 +33,67 @@ class ResponseToken(str, Enum):
 class RequestRules(BaseModel):
     headers: dict[str, str] = {}
     query: dict[str, str] = {}
-    body: dict[str, Any] = {}
+    body: Any = {}
 
-    @field_validator("headers", "query", "body", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def default_empty(cls, v: Any) -> dict:
+    def normalize_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        result = dict(data)
+        # header -> headers
+        if "header" in result and "headers" not in result:
+            result["headers"] = result.pop("header")
+        elif "header" in result:
+            result.pop("header")
+        # query_string -> query
+        if "query_string" in result and "query" not in result:
+            result["query"] = result.pop("query_string")
+        elif "query_string" in result:
+            result.pop("query_string")
+        # ignore parameters
+        result.pop("parameters", None)
+        # error_response -> ignore
+        result.pop("error_response", None)
+        return result
+
+    @field_validator("headers", mode="before")
+    @classmethod
+    def default_empty_headers(cls, v: Any) -> dict:
         return v or {}
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def normalize_query(cls, v: Any) -> dict:
+        if not v:
+            return {}
+        return {k: str(val) for k, val in v.items()}
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def normalize_body(cls, v: Any) -> Any:
+        if v is None:
+            return {}
+        return v
 
 
 class ResponseDef(BaseModel):
     status: int = 200
     headers: dict[str, str] = {}
     body: Any = {}
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        result = dict(data)
+        # header -> headers
+        if "header" in result and "headers" not in result:
+            result["headers"] = result.pop("header")
+        elif "header" in result:
+            result.pop("header")
+        return result
 
     @field_validator("headers", mode="before")
     @classmethod
@@ -61,7 +110,7 @@ class Scenario(BaseModel):
 
     def compute_specificity(self) -> int:
         count = 0
-        for rules in (self.request.headers, self.request.query, self.request.body):
+        for rules in (self.request.headers, self.request.query):
             for pattern in rules.values():
                 if isinstance(pattern, str):
                     if is_regex(pattern):
@@ -72,15 +121,39 @@ class Scenario(BaseModel):
                         count += 3
                 else:
                     count += 3
+        # Body specificity
+        body = self.request.body
+        if isinstance(body, dict):
+            for pattern in body.values():
+                if isinstance(pattern, str):
+                    if is_regex(pattern):
+                        count += 2
+                    elif is_token(pattern):
+                        count += 1
+                    else:
+                        count += 3
+                else:
+                    count += 3
+        elif isinstance(body, list):
+            count += 1
         self.specificity = count
         return count
 
 
 def is_regex(value: str) -> bool:
-    return value.startswith("^") and value.endswith("$")
+    # Standard regex: ^...$
+    if value.startswith("^") and value.endswith("$"):
+        return True
+    # $$^...$$ format
+    if value.startswith("$$^") and value.endswith("$$"):
+        return True
+    return False
 
 
 def is_token(value: str) -> bool:
+    # $$...$$ format (wildcard patterns like $$.*$$, $$.*json.*$$)
+    if value.startswith("$$") and value.endswith("$$"):
+        return True
     try:
         RequestToken(value)
         return True

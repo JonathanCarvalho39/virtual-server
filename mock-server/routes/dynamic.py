@@ -53,7 +53,7 @@ def create_dynamic_router() -> APIRouter:
 
         body: Any = None
         content_type = request.headers.get("content-type", "")
-        if "application/json" in content_type:
+        if "json" in content_type:
             try:
                 body = await request.json()
             except Exception:

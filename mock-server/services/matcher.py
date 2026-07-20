@@ -17,8 +17,13 @@ from models.scenario import (
 )
 
 
+SKIP_HEADERS = {"content-length", "host", "connection", "transfer-encoding"}
+
+
 def match_request(scenario: Scenario, headers: dict, query: dict, body: Any) -> bool:
     for key, pattern in scenario.request.headers.items():
+        if key.lower() in SKIP_HEADERS:
+            continue
         value = _get_header(headers, key)
         if not _match_value(pattern, value):
             return False
@@ -28,12 +33,20 @@ def match_request(scenario: Scenario, headers: dict, query: dict, body: Any) -> 
         if not _match_value(pattern, value):
             return False
 
-    for key, pattern in scenario.request.body.items():
+    # Body matching - handle both dict and list patterns
+    body_pattern = scenario.request.body
+    if isinstance(body_pattern, list):
+        # List body pattern - match if body is a list and patterns match
+        if not isinstance(body, list):
+            return False
+    elif isinstance(body_pattern, dict) and body_pattern:
+        # Dict body pattern
         if not isinstance(body, dict):
             return False
-        value = body.get(key)
-        if not _match_value(pattern, value):
-            return False
+        for key, pattern in body_pattern.items():
+            value = body.get(key)
+            if not _match_value(pattern, value):
+                return False
 
     return True
 
@@ -66,7 +79,18 @@ def resolve_response(scenario: Scenario, headers: dict, query: dict, body: Any) 
     }
 
 
-def _match_value(pattern: str, value: Any) -> bool:
+def _match_value(pattern: Any, value: Any) -> bool:
+    if isinstance(pattern, dict):
+        if not isinstance(value, dict):
+            return False
+        for k, v in pattern.items():
+            if not _match_value(v, value.get(k)):
+                return False
+        return True
+
+    if not isinstance(pattern, str):
+        return str(pattern) == str(value) if value is not None else False
+
     if is_token(pattern):
         return _match_token(pattern, value)
 
@@ -77,6 +101,10 @@ def _match_value(pattern: str, value: Any) -> bool:
 
 
 def _match_token(token: str, value: Any) -> bool:
+    # $$...$$ wildcard patterns
+    if token.startswith("$$") and token.endswith("$$"):
+        return value is not None
+
     if token == RequestToken.ANY:
         return value is not None
     if token == RequestToken.MISSING:
@@ -117,6 +145,11 @@ def _match_token(token: str, value: Any) -> bool:
 def _match_regex(pattern: str, value: Any) -> bool:
     if value is None:
         return False
+    # Convert $$^...$$ to ^...$
+    if pattern.startswith("$$^") and pattern.endswith("$$"):
+        pattern = pattern[2:-2] + "$"
+        if not pattern.endswith("$"):
+            pattern = pattern + "$"
     try:
         return bool(re.fullmatch(pattern, str(value)))
     except re.error:
