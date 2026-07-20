@@ -356,6 +356,7 @@ async def upload_folder(
     target: str = Form(""),
 ):
     content = await file.read()
+    await file.close()
     if len(content) > MAX_UPLOAD_SIZE:
         return JSONResponse(
             status_code=413,
@@ -446,20 +447,22 @@ async def upload_batch(
         return JSONResponse(status_code=403, content={"error": "Fora do diretório api/"})
 
     try:
+        file_contents = []
         total_size = 0
         for f in files:
             content = await f.read()
+            await f.close()
             total_size += len(content)
             if total_size > MAX_UPLOAD_SIZE:
                 return JSONResponse(
                     status_code=413,
                     content={"error": f"Arquivos muito grandes. Tamanho máximo: {MAX_UPLOAD_SIZE // (1024*1024)}MB"}
                 )
+            file_contents.append((f, content))
 
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        for f in files:
-            content = await f.read()
+        for f, content in file_contents:
             rel_path = f.filename
             if rel_path.startswith("/"):
                 rel_path = rel_path[1:]
