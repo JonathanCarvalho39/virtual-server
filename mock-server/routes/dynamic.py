@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
@@ -8,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 import state
 from models.scenario import Scenario
-from services.matcher import select_scenario, resolve_response
+from services.matcher import select_scenario, select_scenario_with_matching_info, resolve_response
 
 SKIP_PREFIXES = ("admin/", "static/")
 
@@ -42,6 +43,10 @@ def create_dynamic_router() -> APIRouter:
                 "path": route_path,
                 "status": 404,
                 "detail": "Rota não configurada",
+                "request": {
+                    "headers": dict(request.headers),
+                    "query": dict(request.query_params),
+                },
             })
             return JSONResponse(
                 status_code=404,
@@ -62,7 +67,8 @@ def create_dynamic_router() -> APIRouter:
             form = await request.form()
             body = dict(form)
 
-        scenario = select_scenario(scenarios, headers, query, body)
+        matching_info = select_scenario_with_matching_info(scenarios, headers, query, body)
+        scenario = matching_info["scenario"]
 
         if scenario is None:
             state.request_logs.append({
@@ -70,6 +76,10 @@ def create_dynamic_router() -> APIRouter:
                 "path": route_path,
                 "status": 422,
                 "detail": "Nenhum cenário corresponde",
+                "total_scenarios": matching_info["total_scenarios"],
+                "matching_candidates": matching_info["matching_candidates"],
+                "request": {"headers": headers, "query": query, "body": body},
+                "response": {"status": 422, "headers": {}, "body": {"error": "Nenhum cenário corresponde à requisição"}},
             })
             return JSONResponse(
                 status_code=422,
@@ -78,11 +88,19 @@ def create_dynamic_router() -> APIRouter:
 
         resolved = resolve_response(scenario, headers, query, body)
 
+        # Extract only filename (e.g., "status_totp_required_email.json")
+        scenario_file = os.path.basename(scenario.file_path) if scenario.file_path else scenario.name
+
         state.request_logs.append({
             "method": method,
             "path": route_path,
             "status": resolved["status"],
-            "detail": scenario.name,
+            "detail": scenario_file,
+            "total_scenarios": matching_info["total_scenarios"],
+            "matching_candidates": matching_info["matching_candidates"],
+            "candidate_names": matching_info["candidate_names"],
+            "request": {"headers": headers, "query": query, "body": body},
+            "response": {"status": resolved["status"], "headers": resolved["headers"], "body": resolved["body"]},
         })
 
         return Response(

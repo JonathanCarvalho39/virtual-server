@@ -68,6 +68,31 @@ def select_scenario(
     return candidates[0]
 
 
+def select_scenario_with_matching_info(
+    scenarios: list[Scenario],
+    headers: dict,
+    query: dict,
+    body: Any,
+) -> dict:
+    """Seleciona cenário e retorna informações detalhadas sobre o matching."""
+    candidates = [
+        s for s in scenarios if match_request(s, headers, query, body)
+    ]
+
+    selected = None
+    if candidates:
+        candidates.sort(key=lambda s: s.specificity, reverse=True)
+        selected = candidates[0]
+
+    return {
+        "scenario": selected,
+        "total_scenarios": len(scenarios),
+        "matching_candidates": len(candidates),
+        "candidate_names": [s.name for s in candidates] if candidates else [],
+        "selected_name": selected.name if selected else None,
+    }
+
+
 def resolve_response(scenario: Scenario, headers: dict, query: dict, body: Any) -> dict:
     resolved_headers = dict(scenario.response.headers)
     resolved_body = _resolve_tokens(scenario.response.body, headers, query, body)

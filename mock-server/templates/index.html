@@ -83,6 +83,9 @@
                 <button id="btn-save" class="btn btn-primary btn-sm" disabled>
                     <i class="fas fa-save"></i> Salvar
                 </button>
+                <button id="btn-format" class="btn btn-secondary btn-sm" disabled title="Formatar JSON">
+                    <i class="fas fa-wand-magic-sparkles"></i> Formatar
+                </button>
             </div>
             <div id="editor-container">
                 <div id="editor-loading" class="editor-loading hidden">
@@ -108,7 +111,12 @@
                 <i class="fas fa-trash"></i>
             </button>
         </div>
-        <div id="log-content" class="log-content"></div>
+        <div id="log-content" class="log-content log-columns">
+            <div id="log-list" class="log-list"></div>
+            <div id="log-detail" class="log-detail">
+                <p class="empty-state">Clique em um log para ver detalhes</p>
+            </div>
+        </div>
     </footer>
 
     <div id="modal-overlay" class="modal-overlay hidden">

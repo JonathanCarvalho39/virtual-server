@@ -194,6 +194,11 @@ async def clear_logs():
 def _resolve_parent(parent_path: str) -> Path:
     if not parent_path:
         return API_DIR
+
+    # If parent_path points to a file (ends with .json), use its directory
+    if parent_path.endswith('.json'):
+        parent_path = parent_path.rsplit('/', 1)[0]
+
     rel = parent_path.lstrip("/")
     if rel.startswith("api/"):
         rel = rel[4:]
@@ -239,8 +244,9 @@ async def create_file(payload: dict):
     if not name:
         return JSONResponse(status_code=400, content={"error": "Nome é obrigatório"})
 
+    # Auto-add .json extension if missing
     if not name.endswith(".json"):
-        return JSONResponse(status_code=400, content={"error": "Arquivo deve terminar com .json"})
+        name = name + ".json"
 
     parent = _resolve_parent(parent_path)
     new_file = parent / name
